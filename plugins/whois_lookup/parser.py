@@ -1,5 +1,74 @@
 import json
-from typing import Dict, Any, List
+from typing import Any, Dict
+
+
+def _coerce_text_row(value: Any) -> str:
+    if value is None:
+        return "Unknown"
+    if isinstance(value, list):
+        cleaned = [str(item).strip() for item in value if str(item).strip()]
+        return ", ".join(cleaned) if cleaned else "Unknown"
+    text = str(value).strip()
+    return text or "Unknown"
+
+
+def _parse_plain_text(output: str) -> Dict[str, Any]:
+    detail = {
+        "registrar": "Unknown",
+        "organization": "N/A",
+        "country": "N/A",
+        "creation": "Unknown",
+        "expiry": "Unknown",
+        "nameservers": "N/A",
+    }
+
+    nameservers: list[str] = []
+
+    for raw_line in output.splitlines():
+        line = raw_line.strip()
+        if not line or ":" not in line:
+            continue
+
+        key, value = line.split(":", 1)
+        normalized_key = key.strip().lower()
+        normalized_value = value.strip()
+
+        if normalized_key == "registrar":
+            detail["registrar"] = normalized_value or "Unknown"
+        elif normalized_key in {"registry expiry date", "registrar registration expiration date", "expiry date"}:
+            detail["expiry"] = normalized_value or "Unknown"
+        elif normalized_key in {"creation date", "created date", "registered on"}:
+            detail["creation"] = normalized_value or "Unknown"
+        elif normalized_key in {"registrant organization", "organization", "org"}:
+            detail["organization"] = normalized_value or "N/A"
+        elif normalized_key in {"registrant country", "country"}:
+            detail["country"] = normalized_value or "N/A"
+        elif normalized_key == "name server" and normalized_value:
+            nameservers.append(normalized_value)
+
+    if nameservers:
+        detail["nameservers"] = ", ".join(nameservers)
+
+    findings = [
+        {
+            "title": "WHOIS Record for Target",
+            "category": "Domain Info",
+            "severity": "info",
+            "description": (
+                f"Registrar: {detail['registrar']}\n"
+                f"Expiry: {detail['expiry']}\n"
+                f"Name Servers: {detail['nameservers']}"
+            ),
+            "remediation": "Review domain registration data for accuracy and privacy settings (WHOIS privacy).",
+            "metadata": {"raw_output": output},
+        }
+    ]
+
+    return {
+        "findings": findings,
+        "rows": [detail],
+        "detail": detail,
+    }
 
 def parse(output: str) -> Dict[str, Any]:
     """
@@ -15,8 +84,8 @@ def parse(output: str) -> Dict[str, Any]:
         else:
             data = json.loads(output)
     except Exception:
-        # Fallback if output is not JSON
-        return {"findings": [], "error": "Invalid output format"}
+        # Older tool output and tests may provide plain-text WHOIS content.
+        return _parse_plain_text(output)
 
     findings = []
     
@@ -24,11 +93,9 @@ def parse(output: str) -> Dict[str, Any]:
     expiry = data.get("expiration_date")
     if isinstance(expiry, list):
         expiry = expiry[0]
-    
-    nameservers = data.get("name_servers", [])
-    if isinstance(nameservers, list):
-        nameservers = ", ".join(nameservers)
-    
+
+    nameservers = _coerce_text_row(data.get("name_servers", []))
+
     creation = data.get("creation_date")
     if isinstance(creation, list):
         creation = creation[0]
@@ -42,14 +109,18 @@ def parse(output: str) -> Dict[str, Any]:
         "country": data.get("country") or "N/A",
         "creation": creation_str,
         "expiry": expiry_str,
-        "nameservers": nameservers or "N/A"
+        "nameservers": nameservers,
     }
     
     findings.append({
         "title": f"WHOIS Record for {data.get('domain_name', 'Target')}",
         "category": "Domain Info",
         "severity": "info",
-        "description": f"Registrar: {summary_data['registrar']}\nExpiry: {summary_data['expiry']}\nName Servers: {', '.join(summary_data['nameservers'])}",
+        "description": (
+            f"Registrar: {summary_data['registrar']}\n"
+            f"Expiry: {summary_data['expiry']}\n"
+            f"Name Servers: {summary_data['nameservers']}"
+        ),
         "remediation": "Review domain registration data for accuracy and privacy settings (WHOIS privacy).",
         "metadata": data
     })

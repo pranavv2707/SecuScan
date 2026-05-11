@@ -7,6 +7,8 @@ import ipaddress
 from typing import Tuple
 from fnmatch import fnmatch
 
+from .config import settings
+
 
 # Blocked network ranges
 BLOCKED_NETWORKS = [

@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     # Security
     safe_mode_default: bool = True
     require_consent: bool = True
+    allow_loopback_scans: bool = True
     allowed_networks: List[str] = ["127.0.0.1", "192.168.*.*", "10.*.*.*", "172.16.*.*"]
     cors_allowed_origins: List[str] = [
         "http://localhost:5173",

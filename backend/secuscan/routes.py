@@ -68,7 +68,7 @@ from .models import (
 )
 from .config import settings
 from .database import get_db
-from .plugins import get_plugin_manager
+from .plugins import get_plugin_manager, init_plugins
 from .executor import executor
 from .ratelimit import rate_limiter, concurrent_limiter
 from .validation import validate_target
@@ -100,10 +100,20 @@ async def invalidate_view_cache():
         await cache.delete_prefix(prefix)
 
 
+async def get_plugin_manager_for_request():
+    """
+    In debug mode, refresh plugin metadata from disk on demand so frontend catalog
+    changes reflect parser/metadata edits without requiring a backend restart.
+    """
+    if settings.debug:
+        return await init_plugins(settings.plugins_dir)
+    return get_plugin_manager()
+
+
 @router.get("/plugins", response_model=PluginListResponse)
 async def list_plugins():
     """List all available plugins"""
-    plugin_manager = get_plugin_manager()
+    plugin_manager = await get_plugin_manager_for_request()
     plugins = plugin_manager.list_plugins()
     
     return PluginListResponse(
@@ -115,7 +125,7 @@ async def list_plugins():
 @router.get("/plugin/{plugin_id}/schema")
 async def get_plugin_schema(plugin_id: str):
     """Get plugin schema for UI generation"""
-    plugin_manager = get_plugin_manager()
+    plugin_manager = await get_plugin_manager_for_request()
     if schema := plugin_manager.get_plugin_schema(plugin_id):
         return schema
     else:
@@ -125,7 +135,7 @@ async def get_plugin_schema(plugin_id: str):
 @router.get("/presets")
 async def get_all_presets():
     """Get all plugin presets"""
-    plugin_manager = get_plugin_manager()
+    plugin_manager = await get_plugin_manager_for_request()
     return {
         plugin_id: plugin.presets
         for plugin_id, plugin in plugin_manager.plugins.items()
@@ -149,7 +159,7 @@ async def start_task(
         )
 
     # Get plugin
-    plugin_manager = get_plugin_manager()
+    plugin_manager = await get_plugin_manager_for_request()
     plugin = plugin_manager.get_plugin(request.plugin_id)
 
     if not plugin:
@@ -417,6 +427,7 @@ async def get_task_result(task_id: str):
         "findings": findings,
         "structured": structured,
         "raw_output_path": task_row["raw_output_path"],
+        "raw_output_excerpt": raw_output,
         "raw_output": raw_output,
         "command_used": task_row["command_used"],
         "errors": [{"message": task_row["error_message"]}] if task_row["error_message"] else [],
@@ -474,7 +485,6 @@ async def get_dashboard_summary():
                              for item in findings)
 
         recent_findings: List[Dict] = findings[:5]
-        recent_findings: List[Dict] = findings[:5]
 
         return {
             "total_findings": len(findings),
@@ -484,7 +494,6 @@ async def get_dashboard_summary():
             "low_findings": low_findings,
             "info_findings": info_findings,
             "last_scan_time": findings[0].get("discovered_at") if findings else None,
-            "recent_findings": recent_findings,
             "recent_findings": recent_findings,
             "scan_activity": {
                 "total": int(task_stats["total"]) if task_stats and task_stats.get("total") is not None else 0,
@@ -967,4 +976,3 @@ async def get_assets():
     rows = await db.fetchall("SELECT DISTINCT target FROM tasks UNION SELECT DISTINCT target FROM findings")
     assets = [{"id": str(uuid.uuid4()), "name": row["target"]} for row in rows]
     return {"assets": assets}
-

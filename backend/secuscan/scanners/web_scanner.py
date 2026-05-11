@@ -160,6 +160,6 @@ class WebScanner(BaseScanner):
             try:
                 process.kill()
                 await process.wait()
-            except:
+            except Exception:
                 pass
             raise
