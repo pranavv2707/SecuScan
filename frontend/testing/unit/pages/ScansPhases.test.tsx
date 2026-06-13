@@ -3,19 +3,16 @@ import { MemoryRouter } from 'react-router-dom';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Scans from '../../../src/pages/Scans';
 
+vi.mock('../../../src/components/ToastContext', () => ({
+  useToast: () => ({ addToast: vi.fn(), removeToast: vi.fn() }),
+  ToastProvider: ({ children }: any) => children,
+}))
+
 vi.mock('../../../src/api', () => ({
   API_BASE: 'http://localhost',
   deleteTask: vi.fn(),
   clearAllTasks: vi.fn(),
   bulkDeleteTasks: vi.fn(),
-}));
-
-vi.mock('../../../src/components/ToastContext', () => ({
-  useToast: () => ({
-    addToast: vi.fn(),
-    removeToast: vi.fn(),
-  }),
-  ToastProvider: ({ children }: any) => children,
 }));
 
 vi.mock('react-router-dom', async (importOriginal) => {
@@ -80,11 +77,13 @@ function renderScans() {
 describe('Scans — phase display', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+
     fetchSpy = vi.fn().mockResolvedValue({
       ok: true,
       json: () => Promise.resolve(RUNNING_WITH_PHASE_RESPONSE),
     });
     vi.stubGlobal('fetch', fetchSpy);
+
     Object.defineProperty(document, 'visibilityState', {
       configurable: true,
       get: () => 'visible',
@@ -105,8 +104,10 @@ describe('Scans — phase display', () => {
   it('shows phase for a running task in expanded details', async () => {
     renderScans();
     await flush();
+
     clickExpand();
     await flush();
+
     expect(screen.getByText(/RUNNING COMMAND/i)).toBeTruthy();
   });
 
@@ -115,17 +116,21 @@ describe('Scans — phase display', () => {
       ok: true,
       json: () => Promise.resolve(QUEUED_RESPONSE),
     });
+
     renderScans();
     await flush();
     await tickTime(5000);
+
     clickExpand();
     await flush();
+
     expect(screen.queryByText(/PHASE/i)).toBeNull();
   });
 
   it('updates phase when polling returns a running task with phase', async () => {
     renderScans();
     await flush();
+
     fetchSpy.mockResolvedValueOnce({
       ok: true,
       json: () =>
@@ -134,9 +139,12 @@ describe('Scans — phase display', () => {
           pagination: { total_items: 1 },
         }),
     });
+
     await tickTime(5000);
+
     clickExpand();
     await flush();
+
     expect(screen.getByText(/PARSING/i)).toBeTruthy();
   });
 });
